@@ -1,10 +1,15 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
+import './styles.css';
 
 function DossierList() {
     const [dossiers, setDossiers] = useState([]);
 
     useEffect(() => {
+        fetchDossiers();
+    }, []);
+
+    const fetchDossiers = () => {
         axios.get('http://localhost:3001/dossiers')
             .then(response => {
                 setDossiers(response.data);
@@ -12,7 +17,18 @@ function DossierList() {
             .catch(error => {
                 console.error('Erreur lors de la récupération des dossiers:', error);
             });
-    }, []);
+    };
+
+    const deleteDossier = (id) => {
+        axios.delete(`http://localhost:3001/dossier/${id}`)
+            .then(response => {
+                console.log(response.data.message);
+                fetchDossiers(); // Re-fetch dossiers after deletion
+            })
+            .catch(error => {
+                console.error('Erreur lors de la suppression du dossier:', error);
+            });
+    };
 
     return (
         <div>
@@ -42,7 +58,7 @@ function DossierList() {
                             <td>{dossier.nombre_echantillons}</td>
                             <td>
                                 <button>Editer</button>
-                                <button>Supprimer</button>
+                                <button onClick={() => deleteDossier(dossier.id)}>Supprimer</button>
                             </td>
                         </tr>
                     ))}
