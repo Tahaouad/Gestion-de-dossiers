@@ -1,5 +1,4 @@
 import React, { useEffect, useState } from 'react';
-import './App.css';
 import DossierList from './components/DossierList';
 import { BrowserRouter as Router, Routes, Route } from "react-router-dom";
 import AddDossierForm from './components/AddDossierForm';
