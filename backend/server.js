@@ -5,11 +5,30 @@ const cors = require('cors');
 const PDFDocument = require('pdfkit');
 const xl = require('excel4node');
 const app = express();
+const fs = require('fs');
+const xlsx = require('xlsx');
+const multer = require('multer');
+const moment = require('moment'); 
+
+
+
+
 
 // Middleware
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 app.use(cors());
+
+const storage = multer.diskStorage({
+    destination: function (req, file, cb) {
+        cb(null, './uploads'); // Dossier où les fichiers seront stockés temporairement
+    },
+    filename: function (req, file, cb) {
+        cb(null, file.originalname); // Utilisation du nom d'origine du fichier
+    }
+});
+const upload = multer({ storage: storage });
+app.use(upload.single('file')); // 'file' est le nom du champ dans le formulaire HTML dans votre composant React
 
 // Configuration de la base de données MySQL
 const connection = mysql.createConnection({
@@ -38,9 +57,42 @@ app.post('/dossier', function(req, res) {
 
 // Lire tous les dossiers
 app.get('/dossiers', function(req, res) {
-    connection.query('SELECT * FROM Dossiers', function(error, results, fields) {
-        if (error) throw error;
-        res.json(results);
+    const { offset = 0, limit = 5 } = req.query;
+    const query = `SELECT * FROM Dossiers LIMIT ${limit} OFFSET ${offset}`;
+    connection.query(query, function(error, results, fields) {
+        if (error) {
+            console.error('Erreur lors de la récupération des dossiers:', error);
+            res.status(500).json({ error: 'Erreur lors de la récupération des dossiers' });
+            return;
+        }
+        connection.query('SELECT COUNT(*) AS totalCount FROM Dossiers', function(error, countResult, fields) {
+            if (error) {
+                console.error('Erreur lors de la récupération du nombre total de dossiers:', error);
+                res.status(500).json({ error: 'Erreur lors de la récupération du nombre total de dossiers' });
+                return;
+            }
+            const totalCount = countResult[0].totalCount;
+            res.json({ dossiers: results, totalCount });
+        });
+    });
+});
+
+
+// Lire  un dossier
+
+app.get('/dossiers/:id', function(req, res) {
+    const id = req.params.id;
+    connection.query('SELECT * FROM Dossiers WHERE id = ?', id, function(error, results, fields) {
+        if (error) {
+            console.error('Erreur lors de la récupération du dossier:', error);
+            return res.status(500).json({ message: 'Erreur lors de la récupération du dossier' });
+        }
+
+        if (results.length === 0) {
+            return res.status(404).json({ message: 'Dossier non trouvé' });
+        }
+
+        res.json(results[0]);
     });
 });
 
@@ -77,38 +129,37 @@ app.delete('/dossier/:id', function(req, res) {
 });
 
 // Imprimer un dossier en PDF
+ 
+
 app.get('/dossier/:id/pdf', function(req, res) {
     const id = req.params.id;
     connection.query('SELECT * FROM Dossiers WHERE id = ?', id, function(error, results, fields) {
         if (error) throw error;
         if (results.length > 0) {
             const dossier = results[0];
-            const doc = new PDFDocument();
-            const pdfFilePath = `dossier_${id}.pdf`;
+            const doc = new PDFDocument({ margin: 50 });
 
             doc.pipe(res);
-            doc.fontSize(12)
-                .text(`N° Dossier: ${dossier.numero_dossier}`, 50, 50)
-                .text(`Date de réception: ${dossier.date_reception}`, 50, 70)
-                .text(`Heure de réception: ${dossier.heure_reception}`, 50, 90)
-                .text(`Cadre d'analyse: ${dossier.cadre_analyse}`, 50, 110)
-                .text(`Service demandeur / Client: ${dossier.service_demandeur}`, 50, 130)
-                .text(`Pays d'origine: ${dossier.pays_origine}`, 50, 150)
-                .text(`Nombre d'échantillons: ${dossier.nombre_echantillons}`, 50, 170)
-                .text(`Code interne échantillon: ${dossier.code_interne_echantillon}`, 50, 190)
-                .text(`Agent recherché: ${dossier.agent_recherche}`, 50, 210)
-                .text(`Culture: ${dossier.culture}`, 50, 230)
-                .text(`Nature d'échantillon: ${dossier.nature_echantillon}`, 50, 250)
-                .text(`N° de lot: ${dossier.numero_lot}`, 50, 270)
-                .text(`Analyse demandée: ${dossier.analyse_demandee}`, 50, 290)
-                .text(`Référence méthode: ${dossier.reference_methode}`, 50, 310)
-                .text(`Début analyse: ${dossier.debut_analyse}`, 50, 330)
-                .text(`Fin analyse: ${dossier.fin_analyse}`, 50, 350)
-                .text(`Etape de l'analyse: ${dossier.etape_analyse}`, 50, 370)
-                .text(`Résultat d'analyse: ${dossier.resultat_analyse}`, 50, 390)
-                .text(`Date envoi résultat: ${dossier.date_envoi_resultat}`, 50, 410)
-                .text(`Statut du dossier: ${dossier.statut_dossier}`, 50, 430)
-                .text(`Commentaire: ${dossier.commentaire}`, 50, 450);
+
+            doc
+                .fontSize(20)
+                .text('Détails du dossier', { align: 'center' })
+                .moveDown(); 
+
+            Object.entries(dossier).forEach(([key, value], index) => {
+                if (value !== null && value !== '') {
+                    let formattedValue = value;
+                    // Si la clé représente une date, nous la formaterons
+                    if (key.toLowerCase().includes('date')) {
+                        formattedValue = moment(value).format('ddd MMM DD YYYY');
+                    }
+                    doc
+                        .fontSize(12)
+                        .text(`${key.replace(/_/g, ' ')}:`, { continued: true, width: 200 }) 
+                        .text(`${formattedValue}`, { width: 300 }) 
+                        .moveDown(); 
+                }
+            });
 
             doc.end();
         } else {
@@ -192,6 +243,77 @@ app.get('/dossier/:id/excel', function(req, res) {
         }
     });
 });
+app.get('/dossiers_ex/excel', function(req, res) {
+    connection.query('SELECT * FROM Dossiers', function(error, results, fields) {
+        if (error) {
+            console.error('Erreur lors de la récupération des dossiers:', error);
+            return res.status(500).json({ message: 'Erreur lors de la récupération des dossiers' });
+        }
+
+        if (results.length === 0) {
+            return res.status(404).json({ message: 'Aucun dossier trouvé' });
+        }
+
+        const xl = require('excel4node'); 
+        const wb = new xl.Workbook();
+        const ws = wb.addWorksheet('Dossiers');
+
+        const titles = Object.keys(results[0]);
+        titles.forEach((title, index) => {
+            ws.cell(1, index + 1).string(title);
+        });
+
+        results.forEach((dossier, rowIndex) => {
+            Object.values(dossier).forEach((value, colIndex) => {
+                if (value !== null) {
+                    ws.cell(rowIndex + 2, colIndex + 1).string(value.toString());
+                } else {
+                    ws.cell(rowIndex + 2, colIndex + 1).string('');
+                }
+            });
+        });
+
+        const fileName = 'dossiers.xlsx';
+        wb.write(fileName, res);
+    });
+});
+
+app.post('/import-dossiers', function(req, res) {
+    const selectedFile = req.file; // Utilisez req.file pour accéder au fichier téléchargé
+    if (!selectedFile) {
+        return res.status(400).json({ message: 'Aucun fichier sélectionné.' });
+    }
+
+    try {
+        const workbook = xlsx.readFile(selectedFile.path);
+        const sheetName = workbook.SheetNames[0];
+        const worksheet = workbook.Sheets[sheetName];
+        
+        // Utiliser header: 1 pour sauter la première ligne (en-tête)
+        const data = xlsx.utils.sheet_to_json(worksheet, { header: 1 });
+        
+        console.log(data);
+        
+        const sql = 'INSERT INTO Dossiers (numero_dossier, date_reception, heure_reception, cadre_analyse, service_demandeur, pays_origine, nombre_echantillons, code_interne_echantillon, agent_recherche, culture, nature_echantillon, numero_lot, analyse_demandee, reference_methode, debut_analyse, fin_analyse, etape_analyse, resultat_analyse, date_envoi_resultat, statut_dossier, commentaire) VALUES ?';
+
+        connection.query(sql, [data.slice(1).map(Object.values)], function(error, results, fields) {
+            if (error) {
+                console.error('Erreur lors de l\'importation des dossiers depuis le fichier Excel :', error);
+                res.status(500).json({ message: 'Erreur lors de l\'importation des dossiers depuis le fichier Excel' });
+                return;
+            }
+            console.log('Dossiers importés avec succès depuis le fichier Excel');
+            res.json({ message: 'Dossiers importés avec succès depuis le fichier Excel' });
+        });
+    } catch (error) {
+        console.error('Erreur lors de la lecture du fichier Excel :', error);
+        res.status(500).json({ message: 'Erreur lors de la lecture du fichier Excel' });
+    }
+});
+
+
+
+
 
 // Démarrer le serveur
 const PORT = process.env.PORT || 3001;

@@ -3,6 +3,9 @@ import DossierList from './components/DossierList';
 import { BrowserRouter as Router, Routes, Route } from "react-router-dom";
 import AddDossierForm from './components/AddDossierForm';
 import Header from './components/Header';
+import EditDossierForm from './components/EditDossierForm';
+import Details from './components/Details';
+import ImportComponent from './components/ImportComponent';
 
 const App = () => {
   const [dossiers, setDossiers] = useState([]);
@@ -44,6 +47,10 @@ const App = () => {
       <Routes>
           <Route path="/" element={<DossierList dossiers={dossiers} />} />
           <Route path="/AddDossierForm" element={<AddDossierForm addDossier={addDossier} />} />
+          <Route path="/editDossier/:dossierId" element={<EditDossierForm />} />
+          <Route path="/details/:id" element={<Details />} />
+          <Route path="/ImportComponent" element={<ImportComponent/>} />
+
       </Routes>
     </Router>
     
